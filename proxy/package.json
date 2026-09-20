@@ -1,0 +1,5 @@
+{
+  "name": "Pogoda Widget — weather.spec",
+  "main": "worker.js",
+  "private": true
+}

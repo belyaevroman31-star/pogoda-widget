@@ -1,0 +1,19 @@
+{
+  "name": "Погода — среднее по 3 сервисам",
+  "short_name": "Погода",
+  "description": "Мобильный виджет погоды: усредняет показания Open-Meteo, OpenWeatherMap и WeatherAPI и предупреждает о дожде, снеге, тумане и гололедице.",
+  "lang": "ru",
+  "categories": ["weather", "lifestyle", "utilities"],
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0b1e3b",
+  "theme_color": "#0b1e3b",
+  "id": "pogoda-3servis",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

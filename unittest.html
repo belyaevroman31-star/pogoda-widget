@@ -1,0 +1,175 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"></head><body>
+<pre id="out">running…</pre>
+<script src="js/config.js"></script>
+<script src="js/services.js"></script>
+<script src="js/average.js"></script>
+<script src="js/warnings.js"></script>
+<script src="js/warnings.js"></script>
+<script>
+(async function () {
+  const log = (o) => document.getElementById("out").textContent = JSON.stringify(o, null, 2);
+  try {
+    // ---- fixtures ----
+    const owmCurrent = {
+      coord: { lon: 37.62, lat: 55.75 },
+      weather: [{ id: 803, main: "Clouds", description: "broken clouds", icon: "04d" }],
+      base: "stations",
+      main: { temp: 18.3, feels_like: 16.6, temp_min: 16, temp_max: 19.5, pressure: 1019, humidity: 58 },
+      visibility: 10000,
+      wind: { speed: 3.1, deg: 160, gust: 6.2 },
+      clouds: { all: 73 },
+      dt: 1789893600,
+      timezone: 10800
+    };
+    const owmForecast = {
+      cod: "200", cnt: 2,
+      list: [
+        {
+          dt: 1789893600,
+          main: { temp: 18.3, feels_like: 16.6, pressure: 1019, humidity: 58 },
+          weather: [{ id: 803, main: "Clouds", icon: "04d" }],
+          clouds: { all: 73 }, wind: { speed: 3.1 }, visibility: 10000, pop: 0.2,
+          rain: { "3h": 0.5 }
+        },
+        {
+          dt: 1789908000,
+          main: { temp: 2.0, feels_like: 0.5, pressure: 1020, humidity: 90 },
+          weather: [{ id: 601, main: "Snow", icon: "13d" }],
+          clouds: { all: 90 }, wind: { speed: 4 }, visibility: 500, pop: 0.9,
+          snow: { "3h": 2.4 }
+        }
+      ]
+    };
+    const wa = {
+      location: { name: "Moscow", region: "Moscow City", country: "Russia", lat: 55.75, lon: 37.62,
+        tz_id: "Europe/Moscow", localtime_epoch: 1789893600, localtime: "2026-09-20 14:00" },
+      current: { last_updated_epoch: 1789893600, last_updated: "2026-09-20 14:00", temp_c: 18.3,
+        feelslike_c: 16.6, is_day: 1, condition: { text: "Облачно", code: 1009 },
+        wind_kph: 11, pressure_mb: 1019, vis_km: 10, cloud: 73, precip_mm: 0.0, humidity: 58 },
+      forecast: { forecastday: [
+        { date: "2026-09-20", date_epoch: 1789862400, day: {}, astro: {}, hour: [
+          { time: "2026-09-20 14:00", temp_c: 18.3, is_day: 1, condition: { text: "Облачно", code: 1009 },
+            wind_kph: 11, humidity: 58, cloud: 73, vis_km: 10, pressure_mb: 1019, precip_mm: 0.0,
+            snow_cm: 0, chance_of_rain: 20, chance_of_snow: 0, will_it_rain: 0, will_it_snow: 0 },
+          { time: "2026-09-20 15:00", temp_c: 0.5, is_day: 1, condition: { text: "Снег", code: 1213 },
+            wind_kph: 14, humidity: 90, cloud: 90, vis_km: 0.5, pressure_mb: 1020, precip_mm: 0.3,
+            snow_cm: 1.2, chance_of_rain: 0, chance_of_snow: 90, will_it_rain: 0, will_it_snow: 1 }
+        ] }
+      ] }
+    };
+
+    // ---- stub fetch (only API hosts; else fall through to real) ----
+    const realFetch = window.fetch.bind(window);
+    window.fetch = (url, opts) => {
+      const u = String(url);
+      if (u.indexOf("api.openweathermap.org/data/2.5/weather") >= 0)
+        return Promise.resolve({ ok: true, status: 200, statusText: "OK", json: () => Promise.resolve(owmCurrent) });
+      if (u.indexOf("api.openweathermap.org/data/2.5/forecast") >= 0)
+        return Promise.resolve({ ok: true, status: 200, statusText: "OK", json: () => Promise.resolve(owmForecast) });
+      if (u.indexOf("api.weatherapi.com") >= 0)
+        return Promise.resolve({ ok: true, status: 200, statusText: "OK", json: () => Promise.resolve(wa) });
+      return realFetch(url, opts);
+    };
+
+    // Temporarily force 'auto' + no proxy so stub is always used
+    const owm = await Services.fetchOpenWeather(55.75, 37.62, "fake_key");
+    const waR = await Services.fetchWeatherAPI(55.75, 37.62, "fake_key");
+
+    // combine
+    const all = [owm, waR];
+    const cur = Average.averageCurrent(all);
+    const hourly = Average.averageHourly(all);
+
+    const owmRain = owm.hourly.some(h => h.flags.rain);
+    const owmSnow = owm.hourly.some(h => h.flags.snow);
+    const waSnow = waR.hourly.some(h => h.flags.snow);
+
+    const result = {
+      owmCurrent: { temp: owm.current.temp, cat: owm.current.category, isDay: owm.current.isDay, windKmh: owm.current.windKmh },
+      owmHourlyRainDetected: owmRain,
+      owmHourlySnowDetected: owmSnow,
+      owmHour2: (function () { const h = owm.hourly[1]; return { rain: h.rainMms, snow: h.snowCm, cat: h.category }; })(),
+      waCurrent: { temp: waR.current.temp, cat: waR.current.category },
+      waHourlySnowDetected: waSnow,
+      waHour1: (function () { const h = waR.hourly[1]; return { snow: h.snowCm, cat: h.category, epochHourOff: new Date(h.epochHour * 1000).toISOString() }; })(),
+      combinedCurrent: { temp: cur.temp, contrib: cur.contrib },
+      combinedFirstSnowHour: (function () { const h = hourly.find(h => h.isSnow); return h ? new Date(h.eh * 1000).toISOString() : null; })(),
+
+      // browser-equivalent OM-only fixture (like index.html?uitest) -> warnings
+      omBrowser: await (async () => {
+        const realFetch2 = window.fetch.bind(window);
+        const nowH = (d) => {
+          const ts = (n) => (n < 10 ? "0" : "") + n;
+          return d.getUTCFullYear() + "-" + ts(d.getUTCMonth() + 1) + "-" + ts(d.getUTCDate()) +
+            "T" + ts(d.getUTCHours()) + ":00";
+        };
+        window.fetch = (url, opts) => {
+          const u = String(url);
+          if (u.indexOf("api.open-meteo.com") >= 0) {
+            const base = Date.now();
+            const N = 48, t = [], temp = [], rh = [], prob = [], rain = [], snowfall = [], code = [], vis = [], rhv = [], w10 = [], press = [], cover = [];
+            for (let i = 0; i < N; i++) {
+              const d = new Date(base - (base % 3600000) + i * 3600000);
+              t.push(nowH(d));
+              temp.push(Math.round((16 - i * 0.3) * 10) / 10);
+              prob.push(i === 3 ? 85 : i >= 10 && i <= 12 ? 70 : 0);
+              rain.push(i === 3 ? 1.2 : 0);
+              snowfall.push(i >= 10 && i <= 12 ? 0.3 : 0);
+              code.push(i === 3 ? 61 : i >= 10 && i <= 12 ? 71 : i === 20 ? 45 : 3);
+              vis.push(i === 20 ? 300 : 24000);
+              rhv.push(i === 20 ? 95 : 60);
+              w10.push(4 + (i % 5));
+              press.push(1015 - (i * 0.05));
+              cover.push(i === 20 ? 100 : 70);
+              rh.push(i === 20 ? 95 : 60);
+            }
+            return Promise.resolve(ok2({
+              latitude: 55.75, longitude: 37.62, timezone: "Etc/UTC", utc_offset_seconds: 0,
+              current: { time: nowH(new Date(base)), temperature_2m: 16.2, apparent_temperature: 14.5,
+                relative_humidity_2m: 58, is_day: 1, precipitation: 0, weather_code: 3, cloud_cover: 70,
+                pressure_msl: 1015, wind_speed_10m: 4.2, visibility: 24000 },
+              current_units: {}, hourly: { time: t, temperature_2m: temp, apparent_temperature: temp,
+                relative_humidity_2m: rh, precipitation_probability: prob, precipitation: rain, rain: rain,
+                showers: null, snowfall: snowfall, weather_code: code, visibility: vis, pressure_msl: press,
+                wind_speed_10m: w10, cloud_cover: cover }, hourly_units: {}
+            }));
+          }
+          return realFetch2(url, opts);
+        };
+        const s2 = await Services.fetchAll(55.75, 37.62, { owmKey: "", waKey: "", proxyUrl: "", proxyMode: "direct" });
+        const h2 = Average.averageHourly(s2.sources);
+        const c2 = Average.averageCurrent(s2.sources.filter(x => x.current));
+        const w2 = Warn.compute(c2, h2, new Date(), 36);
+        const omSrc = (s2.sources.find(x => !x.current) || s2.sources[0]);
+        const omYear3 = omSrc && omSrc.hourly[3];
+        const omYear20 = omSrc && omSrc.hourly[20];
+        const avgHour3 = h2.find(x => x.eh === (omYear3 ? omYear3.eh : -1));
+        const avgHour20 = h2.find(x => x.eh === (omYear20 ? omYear20.eh : -1));
+        return {
+          sourceFlags: omSrc ? { e3: omYear3.flags, e20: omYear20.flags } : null,
+          sourceCats: omSrc ? { cat3: omYear3.category, cat20: omYear20.category } : null,
+          avgFlags: { h3: avgHour3 && { r: avgHour3.isRain, s: avgHour3.isSnow, f: avgHour3.isFog }, h20: avgHour20 && { r: avgHour20.isRain, s: avgHour20.isSnow, f: avgHour20.isFog } },
+          warns: w2.map(w => w.id + ":" + (w.active ? "active" : "future")),
+          rainEntries: h2.filter(h => h.isRain).length,
+          snowEntries: h2.filter(h => h.isSnow).length,
+          fogEntries: h2.filter(h => h.isFog).length,
+          omHourlyLen: omSrc && omSrc.hourly.length,
+          hoursWithCode45: h2.filter(h => h.category === "fog").length
+        };
+      })()
+    };
+    log({ checks: [
+      owm.current.temp === 18.3 ? "PASS owm temp" : "FAIL owm temp",
+      owmRain ? "PASS owm rain flag" : "FAIL owm rain flag",
+      owmSnow ? "PASS owm snow flag" : "FAIL owm snow flag",
+      waR.current.temp === 18.3 ? "PASS wa temp" : "FAIL wa temp",
+      waSnow ? "PASS wa snow flag" : "FAIL wa snow flag",
+      cur.temp != null ? "PASS avg temp across 2" : "FAIL avg temp",
+      hourly.length >= 1 ? "PASS hourly merge" : "FAIL hourly merge"
+    ], result });
+  } catch (e) {
+    log({ fatal: String(e), stack: e && e.stack });
+  }
+})();
+</script>
+</body></html>

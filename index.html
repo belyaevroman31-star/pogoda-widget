@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
+  <title>Погода · среднее по 3 сервисам</title>
+  <meta name="description" content="Мобильный виджет погоды: усредняет показания Open-Meteo, OpenWeatherMap и WeatherAPI, показывает радар осадков и предупреждает о дожде, снеге, тумане и гололедице."/>
+  <meta name="theme-color" content="#0b1e3b"/>
+  <meta name="mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+  <meta name="apple-mobile-web-app-title" content="Погода"/>
+  <link rel="manifest" href="manifest.json"/>
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml"/>
+  <link rel="apple-touch-icon" href="icons/icon-192.png"/>
+  <link rel="stylesheet" href="css/style.css"/>
+</head>
+<body>
+<div id="app">
+  <header class="topbar">
+    <div class="loc">
+      <button id="btnLocation" class="icon-btn" title="Моё местоположение" aria-label="Моё местоположение">📡</button>
+      <div class="loc-text">
+        <h1 id="cityName">Определяю местоположение…</h1>
+        <div id="updatedAt" class="muted">—</div>
+      </div>
+    </div>
+    <div class="actions">
+      <button id="btnShare" class="icon-btn" title="Поделиться" aria-label="Поделиться">📤</button>
+      <button id="btnRefresh" class="icon-btn" title="Обновить" aria-label="Обновить">⟳</button>
+      <button id="btnSettings" class="icon-btn" title="Настройки" aria-label="Настройки">⚙</button>
+    </div>
+  </header>
+
+  <div id="statusBar" class="status" hidden></div>
+  <div id="warnings" class="warnings" hidden></div>
+
+  <main>
+    <section id="currentCard" class="card current hidden">
+      <div class="current-top">
+        <div id="curIcon" class="current-icon">☀️</div>
+        <div>
+          <div class="temp"><span id="curTemp">—</span><span class="deg">°</span></div>
+          <div class="cond" id="curCond">—</div>
+          <div class="feels" id="curFeels">ощущается —</div>
+        </div>
+      </div>
+      <div class="avg-note">⚖️ Среднее по <b id="srcCount">0</b> источникам за последние минуты</div>
+      <div class="stats-grid">
+        <div class="stat"><span class="k">💧 Влажность</span><span class="v" id="stHum">—</span></div>
+        <div class="stat"><span class="k">🌬 Ветер</span><span class="v" id="stWind">—</span></div>
+        <div class="stat"><span class="k">🗜 Давление</span><span class="v" id="stPres">—</span></div>
+        <div class="stat"><span class="k">👁 Видимость</span><span class="v" id="stVis">—</span></div>
+        <div class="stat"><span class="k">☁️ Облачность</span><span class="v" id="stCloud">—</span></div>
+        <div class="stat"><span class="k">🌡 Осадки</span><span class="v" id="stPrec">—</span></div>
+      </div>
+    </section>
+
+    <section id="forecastCard" class="card hidden">
+      <div class="card-title">Почасовой прогноз · среднее</div>
+      <div class="hourly-scroll" id="hourlyScroll"></div>
+    </section>
+
+    <section id="sourcesCard" class="card hidden">
+      <div class="card-title">Источники и отклонение от среднего</div>
+      <div id="sourcesList"></div>
+    </section>
+  </main>
+
+  <footer class="footer" id="footer">
+    Усреднение показаний: Open-Meteo · OpenWeatherMap · WeatherAPI
+  </footer>
+</div>
+
+<button id="btnMap" class="fab" title="Карта осадков" aria-label="Карта осадков">
+  <span class="fab-ic">🌧</span> Радар
+</button>
+
+<!-- Settings modal -->
+<div id="settingsModal" class="sheet-wrap" hidden>
+  <div class="sheet">
+    <div class="grabber"></div>
+    <div class="sheet-head">
+      <h2>Настройки</h2>
+      <button class="icon-btn" id="btnCloseSettings" type="button" aria-label="Закрыть">✕</button>
+    </div>
+    <form id="settingsForm">
+      <label class="field">
+        <span>Город или координаты</span>
+        <div class="autocomplete">
+          <input id="cityInput" type="text" placeholder="Например: Москва" autocomplete="off"/>
+          <ul id="citySuggest" class="suggest" hidden></ul>
+        </div>
+        <button type="button" class="link-btn" id="btnUseGeo">📡 Использовать моё местоположение</button>
+      </label>
+      <label class="field">
+        <span>OpenWeatherMap · API key (appid) — бесплатно на openweathermap.org</span>
+        <input id="owmKey" type="password" placeholder="ключ, без него сервис пропускается"/>
+      </label>
+      <label class="field">
+        <span>WeatherAPI.com · API key — бесплатно на weatherapi.com</span>
+        <input id="waKey" type="password" placeholder="ключ, без него сервис пропускается"/>
+      </label>
+      <label class="field">
+        <span>CORS-прокси для WeatherAPI (необязательно)</span>
+        <input id="proxyUrl" type="url" placeholder="https://my-worker.workers.dev/?url={url}"/>
+        <button type="button" class="link-btn" id="btnTestProxy">🧪 Проверить прокси</button>
+      </label>
+      <label class="field">
+        <span>Режим запросов к API</span>
+        <select id="proxyMode">
+          <option value="auto">Авто (напрямую, затем прокси)</option>
+          <option value="direct">Только напрямую</option>
+          <option value="proxy">Только через прокси</option>
+        </select>
+      </label>
+      <label class="field">
+        <span>Горизонт предупреждений</span>
+        <select id="warnHorizon">
+          <option value="24">24 часа</option>
+          <option value="36" selected>36 часов</option>
+          <option value="48">48 часов</option>
+        </select>
+      </label>
+      <div class="modal-actions">
+        <button type="submit" class="primary">Сохранить и обновить</button>
+      </div>
+    </form>
+    <p class="hint">Open-Meteo работает без ключа. Ключи OpenWeatherMap и WeatherAPI хранятся только в вашем браузере (localStorage). Как развернуть свой бесплатный прокси — в README.md. Для установки на телефон: меню браузера → «Добавить на главный экран».</p>
+  </div>
+</div>
+
+<!-- Share modal -->
+<div id="shareModal" class="sheet-wrap" hidden>
+  <div class="sheet">
+    <div class="grabber"></div>
+    <div class="sheet-head">
+      <h2>Поделиться</h2>
+      <button class="icon-btn" id="btnCloseShare" type="button" aria-label="Закрыть">✕</button>
+    </div>
+    <div class="share-body">
+      <div class="qr-box">
+        <img id="qrImg" alt="QR-код со ссылкой на приложение"/>
+      </div>
+      <div class="share-link" id="shareLink">—</div>
+      <div class="share-actions">
+        <button type="button" class="primary" id="btnShareNative">📤 Отправить через…</button>
+        <button type="button" class="ghost" id="btnCopyLink">🔗 Скопировать ссылку</button>
+      </div>
+      <p class="hint">Друг откроет ссылку в Chrome на Android — внизу появится кнопка «Установить приложение».</p>
+    </div>
+  </div>
+</div>
+
+<!-- Radar modal -->
+<div id="mapModal" class="sheet-wrap map-wrap" hidden>
+  <div class="sheet map-sheet">
+    <div class="grabber"></div>
+    <div class="sheet-head">
+      <h2>Карта осадков</h2>
+      <div class="actions">
+        <button class="icon-btn" id="btnMapRecenter" title="К моей локации" aria-label="К моей локации">◎</button>
+        <button class="icon-btn" id="btnCloseMap" aria-label="Закрыть">✕</button>
+      </div>
+    </div>
+    <div id="radarStatus" class="radar-status"></div>
+    <div id="rainMap" class="rain-map"></div>
+    <div class="radar-controls">
+      <div class="legend">
+        <span>слабо</span>
+        <span class="lg-0"></span><span class="lg-1"></span><span class="lg-2"></span>
+        <span class="lg-3"></span><span class="lg-4"></span><span class="lg-5"></span>
+        <span>сильно</span>
+      </div>
+      <div class="ctrl-row">
+        <button class="icon-btn thin" id="radarPrev" aria-label="Предыдущий кадр">⏮</button>
+        <button class="icon-btn wide" id="radarPlay" aria-label="Воспроизвести">▶</button>
+        <button class="icon-btn thin" id="radarNext" aria-label="Следующий кадр">⏭</button>
+      </div>
+      <div class="ctrl-slider">
+        <span id="radarTime">—:—</span>
+        <input type="range" id="radarRange" min="0" max="0" value="0"/>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="js/config.js"></script>
+<script src="js/services.js"></script>
+<script src="js/average.js"></script>
+<script src="js/warnings.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/map.js"></script>
+<script>
+// self-test hook: index.html?uitest=1 — stubs network + geolocation and asserts UI rendering.
+// Not active in normal use.
+if (new URLSearchParams(location.search).get("uitest")) {
+  (function () {
+    try {
+      localStorage.setItem(window.AppConfig.storageKey, JSON.stringify({
+        city: "Москва", latitude: 55.75, longitude: 37.62,
+        timezone: "Europe/Moscow", warnHorizonHours: 36,
+        proxyMode: "direct", proxyUrl: "", owmKey: "", waKey: ""
+      }));
+    } catch (e) {}
+    window.__errs = [];
+    window.addEventListener("error", (e) => window.__errs.push("ERR:" + (e.message || "") + " @" + (e.filename || "") + ":" + (e.lineno || "")));
+    window.__nullIds = [];
+    document.getElementById = (function (orig) {
+      return function (id) {
+        const el = orig.call(document, id);
+        if (!el) window.__nullIds.push(id);
+        return el;
+      };
+    })(document.getElementById.bind(document));
+    function ok(o) { return { ok: true, status: 200, statusText: "OK", json: () => Promise.resolve(o) }; }
+    const realFetch = window.fetch.bind(window);
+    window.fetch = (url, opts) => {
+      const u = String(url);
+      if (u.indexOf("api.open-meteo.com") >= 0) {
+        const nowH = (d) => {
+          const ts = (ts2) => (ts2 < 10 ? "0" : "") + ts2;
+          return d.getUTCFullYear() + "-" + ts(d.getUTCMonth() + 1) + "-" + ts(d.getUTCDate()) +
+            "T" + ts(d.getUTCHours()) + ":00";
+        };
+        const base = Date.now();
+        const N = 48, t = [], temp = [], rain = [], snowfall = [], code = [], prob = [], vis = [], rh = [], w10 = [], press = [], cover = [];
+        for (let i = 0; i < N; i++) {
+          const d = new Date(base - (base % 3600000) + i * 3600000);
+          t.push(nowH(d));
+          temp.push(Math.round((16 - i * 0.3) * 10) / 10);
+          prob.push(i === 3 ? 85 : i >= 10 && i <= 12 ? 70 : 0);
+          rain.push(i === 3 ? 1.2 : 0);
+          snowfall.push(i >= 10 && i <= 12 ? 0.3 : 0);
+          code.push(i === 3 ? 61 : i >= 10 && i <= 12 ? 71 : i === 20 ? 45 : 3);
+          vis.push(i === 20 ? 300 : i === 21 ? 400 : 24000);
+          rh.push(i === 20 ? 95 : 60);
+          w10.push(4 + (i % 5));
+          press.push(1015 - (i * 0.05));
+          cover.push(i === 20 ? 100 : 70);
+        }
+        return Promise.resolve(ok({
+          latitude: 55.75, longitude: 37.62, timezone: "Etc/UTC", utc_offset_seconds: 0,
+          current: { time: nowH(new Date(base)), temperature_2m: 16.2, apparent_temperature: 14.5,
+            relative_humidity_2m: 58, is_day: 1, precipitation: 0.0, weather_code: 3,
+            cloud_cover: 70, pressure_msl: 1015, wind_speed_10m: 4.2, visibility: 24000 },
+          current_units: {}, hourly: {
+            time: t, temperature_2m: temp, apparent_temperature: temp,
+            relative_humidity_2m: rh, precipitation_probability: prob, precipitation: rain,
+            rain: rain, showers: null, snowfall: snowfall, weather_code: code, visibility: vis,
+            pressure_msl: press, wind_speed_10m: w10, cloud_cover: cover
+          }, hourly_units: {}
+        }));
+      }
+      if (u.indexOf("geocoding-api.open-meteo.com") >= 0) {
+        return Promise.resolve(ok({ results: [{ name: "Москва", admin1: "Москва", country: "Россия", latitude: 55.75, longitude: 37.62, timezone: "Europe/Moscow" }] }));
+      }
+      if (u.indexOf("nominatim.openstreetmap.org") >= 0) {
+        return Promise.resolve(ok({ name: "Москва", timezone: "Europe/Moscow" }));
+      }
+      if (u.indexOf("rainviewer.com") >= 0) {
+        return Promise.resolve(ok({ host: "tilecache.rainviewer.com", radar: { past: [{ time: base - 600000, path: "/v2/radar/1789893600" }] }, nowcast: [], satellite: { past: [] } }));
+      }
+      return realFetch(url, opts);
+    };
+    navigator.geolocation = {
+      getCurrentPosition: (okcb, errcb, opts) => okcb({ coords: { latitude: 55.75, longitude: 37.62 }, timestamp: Date.now() })
+    };
+    window.__uitestDone = null;
+    setTimeout(() => {
+      const $ = (id) => document.getElementById(id);
+      const t = $("curTemp") && $("curTemp").textContent;
+      const warns = $("warnings") ? $("warnings").innerText : "";
+      const stillCur = $("stWind") ? $("stWind").textContent : "";
+      const hours = $("hourlyScroll") ? $("hourlyScroll").children.length : -1;
+      const srcs = $("sourcesList") ? $("sourcesList").textContent : "";
+      const errs = window.__errs || [];
+      const statusTxt = $("statusBar") ? $("statusBar").textContent : "";
+      const r = {
+        checks: [
+          t === "16" ? "PASS current temp=16" : "FAIL temp=" + t,
+          warns.indexOf("Дождь") >= 0 && warns.indexOf("сейчас") >= 0 ? "PASS active rain warning" : "FAIL warns=" + warns.slice(0, 80),
+          warns.indexOf("Снег") >= 0 ? "PASS snow warning" : "FAIL no snow warning",
+          warns.indexOf("Туман") >= 0 ? "PASS fog warning" : "FAIL no fog warning",
+          hours >= 30 ? "PASS hourly tiles (" + hours + ")" : "FAIL hours=" + hours,
+          srcs.indexOf("Open-Meteo") >= 0 ? "PASS sources section" : "FAIL sources=" + srcs.slice(0, 60),
+          $("currentCard") && !$("currentCard").classList.contains("hidden") ? "PASS current card shown" : "FAIL current card hidden",
+          stillCur.indexOf("км/ч") >= 0 ? "PASS wind stat=" + stillCur : "FAIL wind=" + stillCur,
+          errs.length === 0 ? "PASS no pageErrors" : "FAIL errs=" + errs.join(" | ")
+        ],
+        status: statusTxt,
+        nullIds: window.__nullIds,
+        warns: warns.slice(0, 160),
+        temp: t, wind: stillCur
+      };
+      const pre = document.createElement("pre");
+      pre.id = "uitest-result";
+      pre.textContent = JSON.stringify(r, null, 2);
+      document.body.appendChild(pre);
+    }, 4000);
+  })();
+}
+</script>
+<script src="js/app.js"></script>
+</body>
+</html>

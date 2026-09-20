@@ -1,0 +1,69 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"></head><body>
+<pre id="out">running…</pre>
+<script>
+window.__errs = [];
+window.addEventListener("error", (e) => window.__errs.push("ERR:" + e.message + " @" + (e.filename || "") + ":" + (e.lineno || "")));
+</script>
+<script src="js/config.js"></script>
+<script src="js/services.js"></script>
+<script src="js/average.js"></script>
+<script src="js/warnings.js"></script>
+<script>
+(async function () {
+  const out = document.getElementById("out");
+  const log = (o) => { out.textContent = JSON.stringify(o, null, 2); };
+  try {
+    const cities = await Services.geocode("Москва");
+    const m = cities[0];
+    const res = await Services.fetchAll(m.latitude, m.longitude,
+      { owmKey: "", waKey: "", proxyUrl: "", proxyMode: "auto" });
+
+    const withCur = res.sources.filter((s) => s.current);
+    const cur = Average.averageCurrent(withCur);
+    const hourly = Average.averageHourly(res.sources);
+    const now = new Date();
+    const warns = Warn.compute(cur, hourly, now, 36);
+
+    // rainviewer
+    let radar = null;
+    try { radar = await Services.fetchRainViewer(); } catch (e) { radar = { error: e.message }; }
+
+    // большой горизонт для предупреждений (проверим наличие флагов)
+    const hasRain = hourly.some(h => h.isRain);
+    const hasSnow = hourly.some(h => h.isSnow);
+    const hasIce = hourly.some(h => h.isFrozen);
+    const hasFogB = hourly.some(h => h.isFog);
+
+    // assertions
+    const assert = (c, msg) => c ? "PASS " : "FAIL ";
+    const checks = [
+      assert(Array.isArray(cities) && cities.length > 0, "geocode"),
+      assert(res.sources.length >= 1, "at least open-meteo source"),
+      assert(cur.temp != null, "avg temperature"),
+      assert(hourly.length >= 24, "enough hourly buckets") + "(" + hourly.length + ")",
+      assert(warns.length >= 0, "warnings module runs"),
+      assert(radar.frames ? radar.frames.length > 0 : false, "rainviewer frames") + (radar.frames ? "(" + radar.frames.length + ")" : (radar.error ? " err=" + radar.error : "")),
+    ];
+
+    log({
+      checks,
+      geocoded: { name: m.name, lat: m.latitude, lon: m.longitude },
+      sourcesCount: res.sources.length,
+      sources: res.sources.map(s => s.source),
+      errors: res.errors.map(e => ({ source: e.source, message: e.message, status: e.status })),
+      current: { temp: cur.temp && cur.temp.toFixed(1), feels: cur.feelsLike && cur.feelsLike.toFixed(1), hum: cur.humidity && Math.round(cur.humidity), wind: cur.windKmh && Math.round(cur.windKmh), pres: cur.pressure && Math.round(cur.pressure), vis: cur.vis && Math.round(cur.vis), cloud: cur.cloud && Math.round(cur.cloud), cat: cur.category, isDay: cur.isDay, contrib: cur.contrib },
+      hourlyBuckets: hourly.length,
+      flagsInHorizon: { rain: hasRain, snow: hasSnow, ice: hasIce, fog: hasFogB },
+      sampleHours: hourly.slice(0, 6).map(h => ({ t: new Date(h.eh * 1000).toISOString().slice(11, 16) + "Z", temp: h.temp && h.temp.toFixed(1), r: h.isRain, s: h.isSnow, ice: h.isFrozen, fog: h.isFog, vis: h.vis && Math.round(h.vis), n: h.n })),
+      warnings: warns.map(w => ({ id: w.id, active: w.active, text: w.text })),
+      radarHost: radar.host || null,
+      radarFrames: radar.frames ? radar.frames.length : 0,
+      radarSample: radar.frames && radar.frames[0] ? { time: radar.frames[0].time, path: radar.frames[0].path } : null,
+      pageErrors: window.__errs
+    });
+  } catch (e) {
+    log({ fatal: String(e), stack: e && e.stack, pageErrors: window.__errs });
+  }
+})();
+</script>
+</body></html>
