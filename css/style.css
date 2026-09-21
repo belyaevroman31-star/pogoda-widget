@@ -465,6 +465,23 @@ body.loading #btnRefresh { animation: spin 0.9s linear infinite; }
 }
 @keyframes ping { to { box-shadow: 0 0 0 16px rgba(47, 125, 244, 0); } }
 
-/* dark leaflet tweaks */
-.leaflet-control-zoom a { background: rgba(17, 34, 66, 0.9) !important; color: #fff !important; border-color: var(--line) !important; }
-.leaflet-control-zoom { border-radius: 12px !important; overflow: hidden; box-shadow: 0 10px 24px rgba(0,0,0,0.4) !important; }
+==== МОНОХРОМ: тёмно-серый + один голубой акцент (#38bdf8) ====
+:root {
+  --ink:#e9eaec; --muted:#9aa0a8; --bg:#1b1d20; --card:#26282c;
+  --line:rgba(255,255,255,0.10);
+  --accent:#38bdf8; --accent-2:#38bdf8; --ok:#38bdf8; --err:#ff8a5c;
+  --glass:linear-gradient(150deg, rgba(255,255,255,0.07), rgba(255,255,255,0.02));
+  --shadow:0 24px 60px -24px rgba(0,0,0,0.65);
+}
+body {
+  background:
+    radial-gradient(120% 90% at 85% -10%, rgba(56,189,248,0.12) 0%, transparent 55%),
+    radial-gradient(130% 100% at 0% 20%, rgba(255,255,255,0.05) 0%, transparent 55%),
+    linear-gradient(168deg, #232528 0%, #16171a 60%, #111214 100%);
+  background-attachment: fixed;
+}
+/* шапка: название местоположения всегда видно, кнопки опущены ниже */
+.topbar { flex-wrap: wrap; gap: 8px 12px; }
+.topbar .loc { flex: 1 1 100%; min-width: 0; }
+.topbar .loc h1 { white-space: normal; overflow: visible; }
+.topbar .actions { margin-left: 0; padding-top: 2px; }

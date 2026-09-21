@@ -1,4 +1,4 @@
-const CACHE = "pogoda-widget-v1";
+const CACHE = "pogoda-widget-v-bump2-bump2";
 const ASSETS = [
   "./",
   "./index.html",
@@ -9,6 +9,7 @@ const ASSETS = [
   "./js/average.js",
   "./js/warnings.js",
   "./js/ui.js",
+  "./js/map.js",
   "./js/app.js",
   "./icons/icon-192.png",
   "./icons/icon-512.png",

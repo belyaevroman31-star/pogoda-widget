@@ -14,6 +14,7 @@
   <link rel="icon" href="icons/icon.svg" type="image/svg+xml"/>
   <link rel="apple-touch-icon" href="icons/icon-192.png"/>
   <link rel="stylesheet" href="css/style.css"/>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9QY0=" crossorigin=""/>
 </head>
 <body>
 <div id="app">
@@ -26,6 +27,7 @@
       </div>
     </div>
     <div class="actions">
+      <button id="btnRadar" class="icon-btn" title="Карта осадков" aria-label="Карта осадков">🌧</button>
       <button id="btnShare" class="icon-btn" title="Поделиться" aria-label="Поделиться">📤</button>
       <button id="btnRefresh" class="icon-btn" title="Обновить" aria-label="Обновить">⟳</button>
       <button id="btnSettings" class="icon-btn" title="Настройки" aria-label="Настройки">⚙</button>
@@ -126,7 +128,32 @@
   </div>
 </div>
 
-<!-- Share modal -->
+<!-- Radar map modal (OpenWeatherMap precipitation tiles + Leaflet) -->
+<div id="mapSheet" class="sheet-wrap" hidden>
+  <div class="sheet sheet-tall">
+    <div class="grabber"></div>
+    <div class="sheet-head">
+      <h2>Карта осадков</h2>
+      <button class="icon-btn" id="btnRadarClose" type="button" aria-label="Закрыть">✕</button>
+    </div>
+    <div id="radarStatus" class="radar-status">OpenWeatherMap · precipitation tiles</div>
+    <div class="ctrl-row">
+      <div class="ctrl-slider">
+        <span>⚡</span>
+        <input id="radarOpacity" type="range" min="20" max="100" value="75" aria-label="Прозрачность"/>
+        <span id="radarOpacityVal">75%</span>
+      </div>
+    </div>
+    <div class="radar-sheet">
+      <div id="radarMap" class="rain-map"></div>
+      <div class="legend">
+        <span>слабо</span><span class="lg-0"></span><span class="lg-1"></span><span class="lg-2"></span><span class="lg-3"></span><span class="lg-4"></span><span class="lg-5"></span><span>сильно</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div <!-- Share modal -->
 <div id="shareModal" class="sheet-wrap" hidden>
   <div class="sheet">
     <div class="grabber"></div>
@@ -153,6 +180,10 @@
 <script src="js/average.js"></script>
 <script src="js/warnings.js"></script>
 <script src="js/ui.js"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="js/map.js"></script>
+<script src="https://></script>
+</script>
 <script>
 // self-test hook: index.html?uitest=1 — stubs network + geolocation and asserts UI rendering.
 // Not active in normal use.

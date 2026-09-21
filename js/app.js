@@ -125,6 +125,11 @@
 
   function bind() {
     $("btnRefresh").addEventListener("click", refresh);
+    const __rad = $("btnRadar");
+    if (__rad) __rad.addEventListener("click", () => {
+      if (window.RadarMap) { RadarMap.open(); return; }
+      UI.openModal("mapSheet");
+    });
     $("btnSettings").addEventListener("click", () => {
       UI.fillSettings(settings);
       UI.openModal();
@@ -234,6 +239,7 @@
     if ("serviceWorker" in navigator && /^https?:/.test(location.protocol)) {
       navigator.serviceWorker.register("./sw.js").catch(() => { /* offline optional */ });
     }
+    window.RadarMap && window.RadarMap.bind();
   }
 
   document.addEventListener("DOMContentLoaded", () => {

@@ -1,196 +1,200 @@
 "use strict";
 
+/* ============================================================
+ * RadarMap — карта осадков (Leaflet + OpenWeatherMap tiles)
+ *
+ * Источник: OWM weather map tiles precipitation_new (бесплатно,
+ * ваш API-ключ). Показывает зоны осадков поверх базовой карты.
+ * Требует настроенный ключ OWM (settings.owmKey).
+ * ============================================================ */
+
 window.RadarMap = (function () {
   const $ = (id) => document.getElementById(id);
+  const mapSources = {
+    "precipitation": {
+      label: "Осадки",
+      base: "https://tile.openweathermap.org/map/precipitation_new/{z}/{x}/{y}.png?appid="
+    },
+    "clouds": {
+      label: "Облачность",
+      base: "https://tile.openweathermap.org/map/clouds_new/{z}/{x}/{y}.png?appid="
+    },
+    "temp": {
+      label: "Температура",
+      base: "https://tile.openweathermap.org/map/temp_new/{z}/{x}/{y}.png?appid="
+    }
+  };
+  const MAX_ZOOM = 19;
+
   let map = null;
-  let radarLayer = null;
-  let marker = null;
-  let frames = [];
-  let host = "https://tilecache.rainviewer.com";
-  let idx = 0;
-  let playing = false;
-  let animTimer = null;
-  let refreshTimer = null;
-  let currentLat = null;
-  let currentLon = null;
-  const LIB_CSS = "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css";
-  const LIB_JS = "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js";
+  let overlay = null;
+  let curLayer = "precipitation";
+  let center = [55.75, 37.62];
+  let zoom = 8;
+  let userMark = null;
+  let key = "";
 
-  const pad2 = (n) => String(n).padStart(2, "0");
-  const fmtTime = (d) => pad2(d.getHours()) + ":" + pad2(d.getMinutes());
+  function tileUrl(base, k) {
+    return base + encodeURIComponent(k);
+  }
 
-  function ensureLib(cb) {
-    if (window.L) { cb(); return; }
-    const link = document.createElement("link");
-    link.rel = "stylesheet";
-    link.href = LIB_CSS;
-    document.head.appendChild(link);
-    const script = document.createElement("script");
-    script.src = LIB_JS;
-    script.onload = cb;
-    script.onerror = () => {
-      showStatus("Не удалось загрузить карту (нет сети для Leaflet).");
+  function onTileLoad(ev) {
+    const mark = $("radarStatus");
+    if (mark) mark.textContent = "обновлено " + new Date().toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+  }
+  function onTileErr(ev) {
+    const t = ev.target;
+    if (t && t.src && t.src.indexOf("tile.openweathermap.org") >= 0) {
+      const mark = $("radarStatus");
+      if (mark) mark.textContent = "тайлы осадков недоступны — проверьте ключ OWM";
+      t.remove();
+    }
+  }
+
+  /* ---------- public ---------- */
+
+  function open() {
+    if (!key) {
+      const s = window.AppSettings.load();
+      key = (s && s.owmKey || "").trim();
+    }
+    if (map) {
+      UI.openModal("mapSheet");
+      return;
+    }
+    create();
+    UI.openModal("mapSheet");
+  }
+
+  function create() {
+    const sheet = $("mapSheet");
+    if (!sheet) return;
+
+    map = window.L.map(sheet, {
+      zoomControl: true,
+      attributionControl: true,
+      minZoom: 3,
+      maxZoom: MAX_ZOOM
+    });
+    map.setView(center, zoom);
+
+    const baseLayers = {
+      "Схема (OSM)": window.L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        maxZoom: MAX_ZOOM,
+        attribution: "© OpenStreetMap"
+      }),
+      "Спутник (Esri)": window.L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", {
+        maxZoom: 19,
+        attribution: "Tiles © Esri"
+      })
     };
-    document.head.appendChild(script);
-  }
+    baseLayers["Схема (OSM)"].addTo(mapgen);
 
-  function showStatus(text) {
-    $("radarStatus").textContent = text || "";
-  }
+    addOverlay();
+    window.L.control.layers(baseLayers, { [mapSources[curLayer].label]: overlay }, { position: "topright" }).addTo(map);
 
-  function initMap(lat, lon) {
-    if (!map) {
-      map = L.map("rainMap", { zoomControl: true, attributionControl: false }).setView([lat, lon], 8);
-      L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>',
-        maxZoom: 13,
-        subdomains: "abcd"
-      }).addTo(map);
-      radarLayer = L.layerGroup().addTo(map);
-    } else {
-      map.setView([lat, lon], Math.max(map.getZoom(), 8));
+    window.L.control.zoom({ position: "topleft" }).addTo(map);
+
+    if (navigator.geolocation) {
+      const gc = window.L.control.locate ? window.L.control.locate({ position: "bottomleft", flyTo: true, setView: true }) : null;
+      if (gc) gc.addTo(map);
     }
-    if (!marker) {
-      marker = L.marker([lat, lon], {
-        icon: L.divIcon({ html: '<div class="radar-me"></div>', iconSize: [18, 18], iconAnchor: [9, 9] }),
-        zIndexOffset: 1000
-      }).addTo(map);
-    } else {
-      marker.setLatLng([lat, lon]);
-    }
+
+    map.on("click", onMapClick);
   }
 
-  async function loadFrames() {
-    showStatus("Загружаю данные радара…");
-    try {
-      const rv = await Services.fetchRainViewer();
-      frames = rv.frames || [];
-      host = rv.host || host;
-      if (!frames.length) {
-        showStatus("Нет данных радиолокатора для этого региона.");
-        return;
-      }
-      const range = $("radarRange");
-      range.max = frames.length - 1;
-      range.min = 0;
-      idx = nearestIndex(Date.now() / 1000);
-      applyFrame();
-      showStatus("");
-    } catch (e) {
-      showStatus("Ошибка загрузки радара: " + (e.message || e));
-    }
-  }
-
-  function nearestIndex(epochSec) {
-    let best = 0, bestDiff = Infinity;
-    frames.forEach((f, i) => {
-      const d = Math.abs(f.time - epochSec);
-      if (d < bestDiff) { bestDiff = d; best = i; }
+  function addOverlay() {
+    if (!map || !key) return;
+    const src = mapSources[curLayer] || mapSources.precipitation;
+    const t = window.L.tileLayer(tileUrl(src.base, key), {
+      opacity: 0.75,
+      maxZoom: MAX_ZOOM,
+      zIndex: 500
     });
-    if (frames[best] && frames[best].time > epochSec + 600) {
-      for (let i = best; i >= 0; i--) if (frames[i].time <= epochSec) return i;
+    t.on("tileload", onTileLoad);
+    t.on("tileerror", onTileErr);
+    if (overlay) map.removeLayer(overlay);
+    overlay = t;
+    overlay.addTo(map);
+    return overlay;
+  }
+
+  function switchLayer(name) {
+    if (!mapSources[name]) name = "precipitation";
+    curLayer = name;
+    if (map) addOverlay();
+  }
+
+  function paint(arr) {
+    if (!map) return;
+    const ll = arr.map(([la, lo]) => [la, lo]);
+    if (userMark) {
+      userMark.setLatLng([arr[0][0], arr[0][1]]);
+    } else {
+      userMark = window.L.marker([arr[0][0], arr[0][1]], {
+        icon: window.L.divIcon({
+          className: "radar-me",
+          iconSize: [18, 18],
+          iconAnchor: [9, 9]
+        })
+      }).addTo(map);
     }
-    return best;
+    if (ll.length > 1) {
+      if (!map.poly) map.poly = window.L.polyline(ll, { color: "#2f7df4", weight: 3, opacity: 0.9, dashArray: "6 8" }).addTo(map);
+      else map.poly.setLatLngs(ll);
+    }
+    center = ll[ll.length - 1] || center;
   }
 
-  function applyFrame() {
-    if (!frames.length || !map) return;
-    const f = frames[idx];
-    radarLayer.clearLayers();
-    L.tileLayer(host + f.path + "/256/{z}/{x}/{y}/2/1_1.png", {
-      opacity: 0.78,
-      zIndex: 300,
-      maxZoom: 13
-    }).addTo(radarLayer);
-
-    const d = new Date(f.time * 1000);
-    const future = f.time * 1000 > Date.now() + 600000;
-    $("radarTime").textContent = fmtTime(d) + (future ? " · прогноз" : "");
-    $("radarRange").value = String(idx);
-    $("radarPlay").textContent = playing ? "⏸" : "▶";
-    $("radarPlay").setAttribute("aria-label", playing ? "Пауза" : "Воспроизвести");
+  function pinpoint(lat, lon, label) {
+    if (!map) return;
+    center = [lat, lon];
+    map.setView(center, zoom);
+    if (userMark) userMark.setLatLng(center);
+    else userMark = window.L.marker(center, {
+      icon: window.L.divIcon({ className: "radar-me", iconSize: [18, 18], iconAnchor: [9, 9] })
+    }).addTo(map);
+    if (label) {
+      const popup = window.L.popup().setLatLng(center).setContent(label);
+      map.openPopup(popup);
+    }
   }
 
-  function play() {
-    if (!frames.length) return;
-    if (playing) { stopPlay(); return; }
-    playing = true;
-    animTimer = setInterval(() => {
-      idx = (idx + 1) % frames.length;
-      applyFrame();
-    }, 600);
-    applyFrame();
-  }
-
-  function stopPlay() {
-    playing = false;
-    clearInterval(animTimer);
-    animTimer = null;
-    applyFrame();
-  }
-
-  function step(dir) {
-    stopPlay();
-    if (!frames.length) return;
-    idx = (idx + dir + frames.length) % frames.length;
-    applyFrame();
-  }
-
-  function open(lat, lon) {
-    currentLat = lat;
-    currentLon = lon;
-    ensureLib(() => {
-      $("mapModal").hidden = false;
-      document.body.classList.add("modal-open");
-      setTimeout(() => {
-        initMap(lat, lon);
-        if (!frames.length) loadFrames();
-        else {
-          map.setView([lat, lon], Math.max(map.getZoom(), 8));
-          marker.setLatLng([lat, lon]);
-          applyFrame();
-        }
-      }, 60);
-    });
-    clearInterval(refreshTimer);
-    refreshTimer = setInterval(() => {
-      if (!$("mapModal").hidden) loadFrames();
-    }, 5 * 60000);
+  function onMapClick(e) {
+    if (userMark) userMark.setLatLng(e.latlng);
+    else userMark = window.L.marker(e.latlng, {
+      icon: window.L.divIcon({ className: "radar-me", iconSize: [18, 18], iconAnchor: [9, 9] })
+    }).addTo(map);
+    center = [e.latlng.lat, e.latlng.lng];
   }
 
   function close() {
-    stopPlay();
-    $("mapModal").hidden = true;
-    document.body.classList.remove("modal-open");
-    clearInterval(refreshTimer);
+    if (map) {
+      map.remove();
+      map = null;
+      overlay = null;
+      userMark = null;
+    }
+  }
+
+  function setCenter(lat, lon, z) {
+    center = [lat, lon];
+    if (z) zoom = z;
+    if (map) map.setView(center, zoom);
+  }
+
+  function open() {
+    if (!map) create();
+    UI.openModal("mapSheet");
   }
 
   function bind() {
-    $("btnMap").addEventListener("click", () => {
-      const s = window.AppSettings.load();
-      if (s.latitude == null || s.longitude == null) {
-        UI.showStatus("Сначала укажите город или разрешите геолокацию.", "warn");
-        return;
-      }
-      open(s.latitude, s.longitude);
-    });
-    $("btnMapRecenter").addEventListener("click", () => {
-      const s = window.AppSettings.load();
-      if (map && s.latitude != null) map.setView([s.latitude, s.longitude], 8);
-    });
-    $("btnCloseMap").addEventListener("click", close);
-    $("radarPlay").addEventListener("click", play);
-    $("radarPrev").addEventListener("click", () => step(-1));
-    $("radarNext").addEventListener("click", () => step(1));
-    $("radarRange").addEventListener("input", () => {
-      stopPlay();
-      idx = parseInt($("radarRange").value, 10) || 0;
-      applyFrame();
-    });
-    $("mapModal").addEventListener("click", (e) => {
-      if (e.target.id === "mapModal") close();
-    });
+    $("btnRadar") && $("btnRadar").addEventListener("click", open);
+    $("btnRadarClose") && $("btnRadarClose")?.addEventListener("click", () => UI.closeModal());
+    $("radarLayer") && $("radarLayer")?.addEventListener("change", (e) => switchLayer(e.target.value));
+    const s = window.AppSettings.load();
+    key = (s && s.owmKey || "").trim();
   }
 
-  return { open, close, bind };
+  return { bind, open, close, setCenter, switchLayer };
 })();
