@@ -72,10 +72,6 @@
   </footer>
 </div>
 
-<button id="btnMap" class="fab" title="Карта осадков" aria-label="Карта осадков">
-  <span class="fab-ic">🌧</span> Радар
-</button>
-
 <!-- Settings modal -->
 <div id="settingsModal" class="sheet-wrap" hidden>
   <div class="sheet">
@@ -152,45 +148,11 @@
   </div>
 </div>
 
-<!-- Radar modal -->
-<div id="mapModal" class="sheet-wrap map-wrap" hidden>
-  <div class="sheet map-sheet">
-    <div class="grabber"></div>
-    <div class="sheet-head">
-      <h2>Карта осадков</h2>
-      <div class="actions">
-        <button class="icon-btn" id="btnMapRecenter" title="К моей локации" aria-label="К моей локации">◎</button>
-        <button class="icon-btn" id="btnCloseMap" aria-label="Закрыть">✕</button>
-      </div>
-    </div>
-    <div id="radarStatus" class="radar-status"></div>
-    <div id="rainMap" class="rain-map"></div>
-    <div class="radar-controls">
-      <div class="legend">
-        <span>слабо</span>
-        <span class="lg-0"></span><span class="lg-1"></span><span class="lg-2"></span>
-        <span class="lg-3"></span><span class="lg-4"></span><span class="lg-5"></span>
-        <span>сильно</span>
-      </div>
-      <div class="ctrl-row">
-        <button class="icon-btn thin" id="radarPrev" aria-label="Предыдущий кадр">⏮</button>
-        <button class="icon-btn wide" id="radarPlay" aria-label="Воспроизвести">▶</button>
-        <button class="icon-btn thin" id="radarNext" aria-label="Следующий кадр">⏭</button>
-      </div>
-      <div class="ctrl-slider">
-        <span id="radarTime">—:—</span>
-        <input type="range" id="radarRange" min="0" max="0" value="0"/>
-      </div>
-    </div>
-  </div>
-</div>
-
 <script src="js/config.js"></script>
 <script src="js/services.js"></script>
 <script src="js/average.js"></script>
 <script src="js/warnings.js"></script>
 <script src="js/ui.js"></script>
-<script src="js/map.js"></script>
 <script>
 // self-test hook: index.html?uitest=1 — stubs network + geolocation and asserts UI rendering.
 // Not active in normal use.
@@ -257,9 +219,6 @@ if (new URLSearchParams(location.search).get("uitest")) {
       }
       if (u.indexOf("nominatim.openstreetmap.org") >= 0) {
         return Promise.resolve(ok({ name: "Москва", timezone: "Europe/Moscow" }));
-      }
-      if (u.indexOf("rainviewer.com") >= 0) {
-        return Promise.resolve(ok({ host: "tilecache.rainviewer.com", radar: { past: [{ time: base - 600000, path: "/v2/radar/1789893600" }] }, nowcast: [], satellite: { past: [] } }));
       }
       return realFetch(url, opts);
     };

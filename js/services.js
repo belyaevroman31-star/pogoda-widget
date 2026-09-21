@@ -2,7 +2,6 @@
 
 window.Services = (function () {
   const GEOCODE_URL = "https://geocoding-api.open-meteo.com/v1/search";
-  const RAINVIEWER_INDEX = "https://api.rainviewer.com/public/weather-maps.json";
   const FROZEN_WMO = new Set([56, 57, 66, 67]);
   const FROZEN_WA = new Set([1072, 1168, 1171, 1204, 1207, 1235, 1237, 1249, 1252, 1261, 1264]);
 
@@ -342,17 +341,6 @@ window.Services = (function () {
     return { source: "weatherapi", current: cur, hourly, utcOffset: offset };
   }
 
-  /* ---------- RainViewer precipitation map ---------- */
-
-  async function fetchRainViewer() {
-    const j = await fetchSmart(RAINVIEWER_INDEX);
-    const radar = j.radar || {};
-    const frames = []
-      .concat(radar.past || [], radar.nowcast || [])
-      .sort((a, b) => a.time - b.time);
-    return { host: j.host || "https://tilecache.rainviewer.com", frames };
-  }
-
   /* ---------- orchestration ---------- */
 
   async function fetchAll(lat, lon, settings) {
@@ -388,7 +376,6 @@ window.Services = (function () {
     fetchOpenMeteo,
     fetchOpenWeather,
     fetchWeatherAPI,
-    fetchRainViewer,
     flagsFrom
   };
 })();

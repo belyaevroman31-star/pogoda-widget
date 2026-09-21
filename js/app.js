@@ -133,8 +133,6 @@
     $("btnLocation").addEventListener("click", () => geolocate(false));
     $("btnUseGeo").addEventListener("click", () => geolocate(true));
 
-    RadarMap.bind();
-
     $("btnShare").addEventListener("click", () => UI.openShare());
     $("btnCloseShare").addEventListener("click", () => UI.closeShare());
     $("shareModal").addEventListener("click", (e) => {

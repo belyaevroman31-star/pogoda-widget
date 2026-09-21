@@ -18,8 +18,8 @@ window.AppSettings = (function () {
     latitude: null,
     longitude: null,
     timezone: "",
-    owmKey: "",
-    waKey: "",
+    owmKey: "140199bad789f914b8be6eed1321ea95",
+    waKey: "a4e1eb23b62d45d3ad2103041262109",
     proxyMode: "auto", // auto | direct | proxy
     proxyUrl: "",
     warnHorizonHours: 36
