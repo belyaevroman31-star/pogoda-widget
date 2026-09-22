@@ -1,200 +1,113 @@
-"use strict";
+/**
+ * RadarMap — интерактивная карта осадков (Leaflet, локальный) с покадровой анимацией.
+ * Слои: OpenStreetMap (база) + осадки OpenWeatherMap (precipitation_new) +
+ * анимация яркостью кадров и переключение слоёв (дождь / облака / температура).
+ */
+(function () {
+  "use strict";
 
-/* ============================================================
- * RadarMap — карта осадков (Leaflet + OpenWeatherMap tiles)
- *
- * Источник: OWM weather map tiles precipitation_new (бесплатно,
- * ваш API-ключ). Показывает зоны осадков поверх базовой карты.
- * Требует настроенный ключ OWM (settings.owmKey).
- * ============================================================ */
+  var sheet = document.getElementById("mapSheet");
+  var btnRadar = document.getElementById("btnRadar");
+  var btnClose = document.getElementById("btnRadarClose");
 
-window.RadarMap = (function () {
-  const $ = (id) => document.getElementById(id);
-  const mapSources = {
-    "precipitation": {
-      label: "Осадки",
-      base: "https://tile.openweathermap.org/map/precipitation_new/{z}/{x}/{y}.png?appid="
-    },
-    "clouds": {
-      label: "Облачность",
-      base: "https://tile.openweathermap.org/map/clouds_new/{z}/{x}/{y}.png?appid="
-    },
-    "temp": {
-      label: "Температура",
-      base: "https://tile.openweathermap.org/map/temp_new/{z}/{x}/{y}.png?appid="
+  var map = null;
+  var baseLayer = null;
+  var weatherLayer = null;
+  var layerName = "precipitation_new";
+  var key = getKey_();
+  var frames = [0.95, 0.55, 0.8, 0.35]; // «кадры» — яркость слоя
+  var fIdx = 0;
+  var timer = null;         // таймер анимации
+  var TOOLBAR = "<div class='radar-toolbar' style='position:absolute;bottom:10px;left:10px;right:10px;z-index:3;display:flex;gap:6px;flex-wrap:wrap;'><button type='button' class='rv-layer' data-layer='precipitation_new'>Дождь</button><button type='button' class='rv-layer' data-layer='clouds_new'>Облака</button><button type='button' class='rv-layer' data-layer='temp_new'>Температура</button></div>";
+
+  function getKey_() {
+    try {
+      if (window.AppSettings && AppSettings.get) {
+        var k = AppSettings.get("owmKey");
+        if (k) return k;
+      }
+      if (window.AppSettings && AppSettings.key) return AppSettings.key;
+    } catch (e) {}
+    return "";
+  }
+
+  function ensureContainer() {
+    var cv = document.getElementById("radar-map-canvas");
+    if (cv) return cv;
+    if (!sheet) return null;
+    cv = document.createElement("div");
+    cv.id = "radar-map-canvas";
+    cv.style.cssText = "position:relative;width:100%;height:min(62dvh,520px);border-radius:18px;overflow:hidden;z-index:1;background:#202326;";
+    var head = sheet.querySelector(".sheet-head");
+    if (head && head.nextSibling) sheet.insertBefore(cv, head.nextSibling);
+    else sheet.appendChild(cv);
+    return cv;
+  }
+
+  function tile() {
+    return "https://tile.openweathermap.org/map/" + layerName + "/{z}/{x}/{y}.png?appid=" + key;
+  }
+
+  function mkV() {
+    var pt = sheet;
+    if (!sheet) return;
+    var tl = sheet.querySelector(".radar-toolbar");
+    if (!tl) {
+      sheet.insertAdjacentHTML("beforeend", TOOLBAR);
+      tl = sheet.querySelector(".radar-toolbar");
     }
-  };
-  const MAX_ZOOM = 19;
-
-  let map = null;
-  let overlay = null;
-  let curLayer = "precipitation";
-  let center = [55.75, 37.62];
-  let zoom = 8;
-  let userMark = null;
-  let key = "";
-
-  function tileUrl(base, k) {
-    return base + encodeURIComponent(k);
+    if (!tl) return;
+    var self = this;
+    tl.addEventListener("click", function (ev) {
+      var b = ev.target.closest ? ev.target.closest(".rv-layer") : null;
+      if (!b || !b.dataset || !b.dataset.layer) return;
+      layerName = b.dataset.layer;
+      if (weatherLayer) { weatherLayer.setUrl(tile()); }
+    });
   }
-
-  function onTileLoad(ev) {
-    const mark = $("radarStatus");
-    if (mark) mark.textContent = "обновлено " + new Date().toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+  function stopAnim() {
+    if (timer) { clearTimeout(timer); timer = null; }
   }
-  function onTileErr(ev) {
-    const t = ev.target;
-    if (t && t.src && t.src.indexOf("tile.openweathermap.org") >= 0) {
-      const mark = $("radarStatus");
-      if (mark) mark.textContent = "тайлы осадков недоступны — проверьте ключ OWM";
-      t.remove();
-    }
+  function step() {
+    if (!weatherLayer) return;
+    fIdx = (fIdx + 1) % frames.length;
+    try { weatherLayer.setOpacity(frames[fIdx]); } catch (e) {}
+    timer = setTimeout(step, 520);
   }
-
-  /* ---------- public ---------- */
+  function startAnim() {
+    stopAnim();
+    if (frames.length > 1) timer = setTimeout(step, 520);
+  }
 
   function open() {
-    if (!key) {
-      const s = window.AppSettings.load();
-      key = (s && s.owmKey || "").trim();
-    }
-    if (map) {
-      UI.openModal("mapSheet");
-      return;
-    }
-    create();
-    UI.openModal("mapSheet");
-  }
-
-  function create() {
-    const sheet = $("mapSheet");
     if (!sheet) return;
-
-    map = window.L.map(sheet, {
-      zoomControl: true,
-      attributionControl: true,
-      minZoom: 3,
-      maxZoom: MAX_ZOOM
-    });
-    map.setView(center, zoom);
-
-    const baseLayers = {
-      "Схема (OSM)": window.L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-        maxZoom: MAX_ZOOM,
-        attribution: "© OpenStreetMap"
-      }),
-      "Спутник (Esri)": window.L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", {
-        maxZoom: 19,
-        attribution: "Tiles © Esri"
-      })
-    };
-    baseLayers["Схема (OSM)"].addTo(mapgen);
-
-    addOverlay();
-    window.L.control.layers(baseLayers, { [mapSources[curLayer].label]: overlay }, { position: "topright" }).addTo(map);
-
-    window.L.control.zoom({ position: "topleft" }).addTo(map);
-
-    if (navigator.geolocation) {
-      const gc = window.L.control.locate ? window.L.control.locate({ position: "bottomleft", flyTo: true, setView: true }) : null;
-      if (gc) gc.addTo(map);
+    sheet.hidden = false Preston"  ; sheet.classList && sheet.classList.add("active");
+    var cv = ensureContainer();
+    if (!cv) return;
+    if (window.L || window.Leaflet) {
+      var LL = window.L || window.Leaflet;
+      if (!map) {
+        map = LL.map(cv, { zoomControl: true, attributionControl: false });
+        baseLayer = LL.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 20 }).addTo(map);
+        weatherLayer = LL.tileLayer(tile(), { opacity: 0.9, zIndex: 300 }).addTo(map);
+        map.setView([55.75, 37.62], 6);
+        try { map.locate({ setView: true, maxZoom: 9 }); } catch (e) {}
+      }
+      startAnim();
     }
-
-    map.on("click", onMapClick);
-  }
-
-  function addOverlay() {
-    if (!map || !key) return;
-    const src = mapSources[curLayer] || mapSources.precipitation;
-    const t = window.L.tileLayer(tileUrl(src.base, key), {
-      opacity: 0.75,
-      maxZoom: MAX_ZOOM,
-      zIndex: 500
-    });
-    t.on("tileload", onTileLoad);
-    t.on("tileerror", onTileErr);
-    if (overlay) map.removeLayer(overlay);
-    overlay = t;
-    overlay.addTo(map);
-    return overlay;
-  }
-
-  function switchLayer(name) {
-    if (!mapSources[name]) name = "precipitation";
-    curLayer = name;
-    if (map) addOverlay();
-  }
-
-  function paint(arr) {
-    if (!map) return;
-    const ll = arr.map(([la, lo]) => [la, lo]);
-    if (userMark) {
-      userMark.setLatLng([arr[0][0], arr[0][1]]);
-    } else {
-      userMark = window.L.marker([arr[0][0], arr[0][1]], {
-        icon: window.L.divIcon({
-          className: "radar-me",
-          iconSize: [18, 18],
-          iconAnchor: [9, 9]
-        })
-      }).addTo(map);
-    }
-    if (ll.length > 1) {
-      if (!map.poly) map.poly = window.L.polyline(ll, { color: "#2f7df4", weight: 3, opacity: 0.9, dashArray: "6 8" }).addTo(map);
-      else map.poly.setLatLngs(ll);
-    }
-    center = ll[ll.length - 1] || center;
-  }
-
-  function pinpoint(lat, lon, label) {
-    if (!map) return;
-    center = [lat, lon];
-    map.setView(center, zoom);
-    if (userMark) userMark.setLatLng(center);
-    else userMark = window.L.marker(center, {
-      icon: window.L.divIcon({ className: "radar-me", iconSize: [18, 18], iconAnchor: [9, 9] })
-    }).addTo(map);
-    if (label) {
-      const popup = window.L.popup().setLatLng(center).setContent(label);
-      map.openPopup(popup);
-    }
-  }
-
-  function onMapClick(e) {
-    if (userMark) userMark.setLatLng(e.latlng);
-    else userMark = window.L.marker(e.latlng, {
-      icon: window.L.divIcon({ className: "radar-me", iconSize: [18, 18], iconAnchor: [9, 9] })
-    }).addTo(map);
-    center = [e.latlng.lat, e.latlng.lng];
   }
 
   function close() {
-    if (map) {
-      map.remove();
-      map = null;
-      overlay = null;
-      userMark = null;
-    }
-  }
-
-  function setCenter(lat, lon, z) {
-    center = [lat, lon];
-    if (z) zoom = z;
-    if (map) map.setView(center, zoom);
-  }
-
-  function open() {
-    if (!map) create();
-    UI.openModal("mapSheet");
+    stopAnim();
+    if (sheet) { sheet.hidden = true; sheet.classList && sheet.classList.remove("active"); }
+    if (map) { try { map.remove(); } catch (e) {} map = null; }
   }
 
   function bind() {
-    $("btnRadar") && $("btnRadar").addEventListener("click", open);
-    $("btnRadarClose") && $("btnRadarClose")?.addEventListener("click", () => UI.closeModal());
-    $("radarLayer") && $("radarLayer")?.addEventListener("change", (e) => switchLayer(e.target.value));
-    const s = window.AppSettings.load();
-    key = (s && s.owmKey || "").trim();
+    if (btnRadar) btnRadar.addEventListener("click", function () { open(); });
+    if (btnClose) btnClose.addEventListener("click", function () { close(); });
+    mkV.call(this);
   }
 
-  return { bind, open, close, setCenter, switchLayer };
+  window.RadarMap = { bind: bind, open: open, close: close };
 })();

@@ -3,7 +3,7 @@ const SW_VERSION = "w-";
 
 importScripts();
 
-const CACHE = "pogoda-app-" + SW_VERSION;
+const CACHE = "pogoda-app--m1790081856-m1790082059" + SW_VERSION;
 const ASSETS = [
   "./index.html",
   "./css/style.css",
