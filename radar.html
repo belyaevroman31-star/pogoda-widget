@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
+<meta name="theme-color" content="#1b1d20"/>
+<meta name="mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<title>Карта осадков · радар</title>
+<link rel="stylesheet" href="css/style.css"/>
+<link rel="stylesheet" href="js/vendor/leaflet/leaflet.css"/>
+<style>
+  html, body { margin:0; padding:0; height:100%; background:#1b1d20; color:#e9eaec;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; overflow:hidden; }
+  .radar-modal { position:fixed; inset:0; z-index:500; display:flex; flex-direction:column;
+     background:#1b1d20; }
+  .radar-modal.sheet-open { display:flex; }
+  .radar-head { display:flex; align-items:center; gap:10px; padding:14px 16px;
+    background:rgba(22,24,27,.94); border-bottom:1px solid rgba(255,255,255,.08); }
+  .radar-head h1 { margin:0; font-size:17px; font-weight:760; letter-spacing:-.2px; }
+  .radar-head .muted { font-size:11px; color:#9aa0a8; margin-top:2px; }
+  .radar-head .spacer { flex:1; }
+  .radar-head button { font:inherit; font-size:13px; padding:9px 14px; border-radius:14px;
+    border:1px solid rgba(255,255,255,.14); background:rgba(255,255,255,.05); color:#e9eaec; cursor:pointer; }
+  .radar-head button:hover { background:rgba(255,255,255,.1); }
+  #radarMapEl { flex:1; min-height:0; position:relative; z-index:1; }
+  .radar-status { position:absolute; left:10px; bottom:44px; z-index:410; max-width:82%;
+    font-size:11px; color:#c4c8cc; background:rgba(20,22,25,.85); padding:6px 11px; border-radius:14px;
+    border:1px solid rgba(255,255,255,.1); pointer-events:none; }
+  .radar-toolbar { position:absolute; left:0; right:0; bottom:0; z-index:405; display:flex; gap:8px;
+    flex-wrap:wrap; align-items:center; padding:10px 14px calc(12px + env(safe-area-inset-bottom));
+    background:linear-gradient(transparent, rgba(22,24,27,.92)); }
+  .radar-toolbar button { font:inherit; font-size:13px; padding:9px 15px; border-radius:16px;
+    border:1px solid rgba(255,255,255,.14); background:rgba(30,32,36,.9); color:#e9eaec; cursor:pointer; }
+  .radar-toolbar button.on { border-color:#38bdf8; color:#38bdf8; box-shadow:inset 0 0 0 1px #38bdf8; }
+</style>
+</head>
+<body>
+<div class="radar-modal sheet-open" id="radarModal" aria-modal="true" role="dialog" aria-label="Карта осадков">
+  <div class="radar-head">
+    <div>
+      <h1>🛰 Карта осадков</h1>
+      <div class="muted" id="radarStatus">Загрузка…</div>
+    </div>
+    <div class="spacer"></div>
+    <button type="button" id="radarGoBack">✕ Закрыть</button>
+  </div>
+  <div id="radarMapEl"></div>
+  <div class="radar-status" id="radarStatusBar"></div>
+  <div class="radar-toolbar" id="radarBar">
+    <button type="button" data-layer="precipitation_new" class="on">🌧 Дождь</button>
+    <button type="button" data-layer="clouds_new">☁ Облака</button>
+    <button type="button" data-layer="temp_new">🌡 Температура</button>
+  </div>
+</div>
+<script src="js/vendor/leaflet/leaflet.js"></script>
+<script>
+(function () {
+  "use strict";
+  var el = document.getElementById("radarMapEl");
+  var statusBar = document.getElementById("radarStatus");
+  var stBar = document.getElementById("radarStatusBar");
+  var bar = document.getElementById("radarBar");
+  var back = document.getElementById("radarGoBack");
+  var map = null, radarLayer = null, cur = "precipitation_new";
+  var frames = [1.0, 0.62, 0.42, 0.68];
+  var fIdx = 0, timer = null;
+
+  function setStatus(t) {
+    if (statusBar) statusBar.textContent = t;
+    if (stBar) stBar.textContent = t;
+  }
+  function key() {
+    try {
+      var c = localStorage.getItem("wa-config") || "";
+      var m = c.match(/["']?([A-Za-z0-9]{20,64})["']?\s*[,})\]]/);
+      if (m) return m[1];
+    } catch (e) {}
+    try { if (window.AppConfig && AppConfig.owmKey) return AppConfig.owmKey; } catch (e2) {}
+    return "";
+  }
+  function tileURL(layer) {
+    var k = key() || "demo";
+    return "https://tile.openweathermap.org/map/" + layer + "/{z}/{x}/{y}.png?appid=" + encodeURIComponent(k);
+  }
+  function setLayer(name) {
+    cur = name;
+    if (radarLayer) {
+      radarLayer.setUrl(tileURL(cur));
+    }
+    var btns = bar ? bar.querySelectorAll("button") : [];
+    for (var i = 0; i < btns.length; i++) btns[i].classList.toggle("on", btns[i].dataset.layer === cur);
+  }
+  function startAnim() {
+    stopAnim();
+    timer = setInterval(function () {
+      fIdx = (fIdx + 1) % frames.length;
+      if (!radarLayer) return;
+      try { radarLayer.setOpacity(frames[fIdx]); } catch (e) {}
+    }, 520);
+  }
+  function stopAnim() {
+    if (timer) { clearInterval(timer); timer = null; }
+  }
+  function init() {
+    if (!window.L) { setStatus("Leaflet не загрузился (js/vendor/leaflet/leaflet.js)"); return; }
+    map = L.map(el, { zoomControl: true, attributionControl: false });
+    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 20 }).addTo(map);
+    radarLayer = L.tileLayer(tileURL(cur), { opacity: 0.85, maxZoom: 20 }).addTo(map);
+    map.setView([55.75, 37.62], 7);
+    setStatus(key() ? "Прогноз среднее · OWM-радар" : "Радар OWM (ключ не задан — слой может быть пустым)");
+    try {
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(function (p) {
+          map.setView([p.coords.latitude, p.coords.longitude], 9);
+          setStatus("Ваше положение: " + p.coords.latitude.toFixed(2) + ", " + p.coords.longitude.toFixed(2));
+        }, function () {}, { timeout: 6000 });
+      }
+    } catch (e) {}
+    startAnim();
+  }
+  if (bar) bar.addEventListener("click", function (e) {
+    var b = e.target;
+    if (!b || b.tagName !== "BUTTON" || !b.dataset.layer) return;
+    setLayer(b.dataset.layer);
+  });
+  if (back) back.addEventListener("click", function () {
+    stopAnim();
+    try { history.length > 1 ? history.back() : (location.href = "index.html"); } catch (e) {}
+  });
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
+  else init();
+})();
+</script>
+</body>
+</html>
