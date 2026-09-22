@@ -27,7 +27,7 @@
       </div>
     </div>
     <div class="actions">
-      <button id="btnRadar" class="icon-btn" title="Карта осадков" aria-label="Карта осадков">🌧</button>
+      <button id="btnRadar" class="icon-btn" title="Карта осадков" aria-label="Карта осадков" type="button" onclick="(window.RadarMap&&RadarMap.open())||(window.UI&&UI.openModal&&UI.openModal('mapSheet'))">🌧</button>
       <button id="btnShare" class="icon-btn" title="Поделиться" aria-label="Поделиться">📤</button>
       <button id="btnRefresh" class="icon-btn" title="Обновить" aria-label="Обновить">⟳</button>
       <button id="btnSettings" class="icon-btn" title="Настройки" aria-label="Настройки">⚙</button>
