@@ -123,6 +123,39 @@
 
   /* ---------- bindings ---------- */
 
+  // Стартовая самопроверка всех связок карты осадков
+  window.__radarTrace = [];
+  (function radarSelfCheck() {
+    function probe(name, test) {
+      var ok = !!test;
+      window.__radarTrace.push((ok ? "OK:" : "FAIL:") + name);
+      return ok;
+    }
+    var t0 = window.__radarTrace.length;
+    probe("btnRadar-html", document.getElementById("btnRadar"));
+    probe("btnRadarOpen-html", document.getElementById("btnRadarOpen"));
+    probe("btnRadarClose-html", document.getElementById("btnRadarClose"));
+    probe("mapSheet-sheet", document.getElementById("mapSheet"));
+    probe("Leaflet-L", (typeof L !== "undefined") || (window.L && window.L.map && typeof L.map === "function"));
+    probe("RadarMap-js", window.RadarMap && typeof window.RadarMap.open === "function");
+    probe("RadarMap.bound", window.RadarMap && window.RadarMap._radarMapBound === true);
+    document.addEventListener("DOMContentLoaded", function () {
+      setTimeout(function () {
+        if (window.__radarTrace.length > t0) {
+          var okAll = window.__radarTrace.slice(t0).every(function (s) { return s.indexOf("OK:") === 0; });
+          var A=(k)=>""; // noop
+          try {
+            var box = document.getElementById("radarCheckReport");
+            if (box) {
+              box.textContent = "Связки карты: " + (okAll ? "все OK ✅" : window.__radarTrace.slice(t0).join(" · "));
+              box.classList.toggle("hidden", okAll);
+            }
+          } catch (e) {}
+        }
+      }, 2500);
+    });
+  })();
+
   function bind() {
     $("btnRefresh").addEventListener("click", refresh);
     const __rad = $("btnRadar");

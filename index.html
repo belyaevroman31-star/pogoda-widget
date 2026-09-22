@@ -28,6 +28,7 @@
     </div>
     <div class="actions">
       <button id="btnRadar" class="icon-btn" title="Карта осадков" aria-label="Карта осадков" type="button" onclick="(window.RadarMap&&RadarMap.open())||(window.UI&&UI.openModal&&UI.openModal('mapSheet'))">🌧</button>
+      <button id="btnRadarOpen" class="icon-btn btn-radar-open" type="button" title="Карта осадков" aria-label="Открыть карту осадков" onclick="var r=window.RadarMap;window.__radarTrace&&window.__radarTrace.push('btnRadarOpen.click');if(r&&r.open){try{r.open()}catch(e){}}else if(window.UI&&UI.openModal){UI.openModal('mapSheet')}">🗺</button>
       <button id="btnShare" class="icon-btn" title="Поделиться" aria-label="Поделиться">📤</button>
       <button id="btnRefresh" class="icon-btn" title="Обновить" aria-label="Обновить">⟳</button>
       <button id="btnSettings" class="icon-btn" title="Настройки" aria-label="Настройки">⚙</button>
